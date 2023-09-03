@@ -253,8 +253,9 @@ class CarlaDataGenerator:
         return vehicles_list
 
     @staticmethod
-    def change_map(client: Client) -> str:
-        maps = CarlaAPIHelper.get_usable_maps(client)
+    def change_map(client: Client, selectedMap=0) -> str:
+        maps = CarlaAPIHelper.get_usable_maps(client, selectedMap)
+        print(maps)
         map = random.choice(maps)
         if map == "/Game/Carla/Maps/Town10HD_Opt":
             print("Map", map, "is already loaded.")
@@ -266,7 +267,8 @@ class CarlaDataGenerator:
     @staticmethod
     def change_weather(world: World) -> DataWeatherParameters:
         # List of all possible WeatherParametersType instances
-        weather_params = [DataWeatherParametersType.ClearNoon, DataWeatherParametersType.CloudyNoon,
+        weather_params = [DataWeatherParametersType.Default,  # ADDED
+                          DataWeatherParametersType.ClearNoon, DataWeatherParametersType.CloudyNoon,
                           DataWeatherParametersType.ClearSunset, DataWeatherParametersType.WetNoon,
                           DataWeatherParametersType.WetCloudyNoon, DataWeatherParametersType.SoftRainNoon,
                           DataWeatherParametersType.MidRainyNoon, DataWeatherParametersType.HardRainNoon,
@@ -277,35 +279,85 @@ class CarlaDataGenerator:
         new_weather_enum = random.choice(weather_params)
         new_weather: WeatherParameters = WeatherParameters.Default
         # Set the actual weather according to the enum
-        if new_weather_enum == DataWeatherParametersType.ClearNoon:
-            new_weather = WeatherParameters.ClearNoon
-        elif new_weather_enum == DataWeatherParametersType.CloudyNoon:
-            new_weather = WeatherParameters.CloudyNoon
-        elif new_weather_enum == DataWeatherParametersType.ClearSunset:
-            new_weather = WeatherParameters.ClearSunset
-        elif new_weather_enum == DataWeatherParametersType.WetNoon:
-            new_weather = WeatherParameters.WetNoon
-        elif new_weather_enum == DataWeatherParametersType.WetCloudyNoon:
-            new_weather = WeatherParameters.WetCloudyNoon
-        elif new_weather_enum == DataWeatherParametersType.SoftRainNoon:
-            new_weather = WeatherParameters.SoftRainNoon
-        elif new_weather_enum == DataWeatherParametersType.MidRainyNoon:
-            new_weather = WeatherParameters.MidRainyNoon
-        elif new_weather_enum == DataWeatherParametersType.HardRainNoon:
-            new_weather = WeatherParameters.HardRainNoon
-        elif new_weather_enum == DataWeatherParametersType.CloudySunset:
-            new_weather = WeatherParameters.CloudySunset
-        elif new_weather_enum == DataWeatherParametersType.WetSunset:
-            new_weather = WeatherParameters.WetSunset
-        elif new_weather_enum == DataWeatherParametersType.WetCloudySunset:
-            new_weather = WeatherParameters.WetCloudySunset
-        elif new_weather_enum == DataWeatherParametersType.SoftRainSunset:
-            new_weather = WeatherParameters.SoftRainSunset
-        elif new_weather_enum == DataWeatherParametersType.MidRainSunset:
-            new_weather = WeatherParameters.MidRainSunset
-        elif new_weather_enum == DataWeatherParametersType.HardRainSunset:
-            new_weather = WeatherParameters.HardRainSunset
-        print("Changing the weather to", new_weather_enum)
+        if -1 < args.weather < 15:
+            print("Ich habe die WetterId ", args.weather, " übergeben bekommen!")
+            if args.weather == 0:
+                new_weather = WeatherParameters.Default
+                new_weather_enum = DataWeatherParametersType.Default
+            if args.weather == 1:
+                new_weather = WeatherParameters.ClearNoon
+                new_weather_enum = DataWeatherParametersType.ClearNoon
+            elif args.weather == 2:
+                new_weather = WeatherParameters.CloudyNoon
+                new_weather_enum = DataWeatherParametersType.CloudyNoon
+            elif args.weather == 3:
+                new_weather = WeatherParameters.WetNoon
+                new_weather_enum = DataWeatherParametersType.WetNoon
+            elif args.weather == 4:
+                new_weather = WeatherParameters.WetCloudyNoon
+                new_weather_enum = DataWeatherParametersType.WetCloudyNoon
+            elif args.weather == 5:
+                new_weather = WeatherParameters.MidRainyNoon
+                new_weather_enum = DataWeatherParametersType.MidRainyNoon
+            elif args.weather == 6:
+                new_weather = WeatherParameters.HardRainNoon
+                new_weather_enum = DataWeatherParametersType.HardRainNoon
+            elif args.weather == 7:
+                new_weather = WeatherParameters.SoftRainNoon
+                new_weather_enum = DataWeatherParametersType.SoftRainNoon
+            elif args.weather == 8:
+                new_weather = WeatherParameters.ClearSunset
+                new_weather_enum = DataWeatherParametersType.ClearSunset
+            elif args.weather == 9:
+                new_weather = WeatherParameters.CloudySunset
+                new_weather_enum = DataWeatherParametersType.CloudySunset
+            elif args.weather == 10:
+                new_weather = WeatherParameters.WetSunset
+                new_weather_enum = DataWeatherParametersType.WetSunset
+            elif args.weather == 11:
+                new_weather = WeatherParameters.WetCloudySunset
+                new_weather_enum = DataWeatherParametersType.WetCloudySunset
+            elif args.weather == 12:
+                new_weather = WeatherParameters.MidRainSunset
+                new_weather_enum = DataWeatherParametersType.MidRainSunset
+            elif args.weather == 13:
+                new_weather = WeatherParameters.HardRainSunset
+                new_weather_enum = DataWeatherParametersType.HardRainSunset
+            elif args.weather == 14:
+                new_weather = WeatherParameters.SoftRainSunset
+                new_weather_enum = DataWeatherParametersType.SoftRainSunset
+        else:
+            if new_weather_enum == DataWeatherParametersType.Default:
+                new_weather = WeatherParameters.Default
+            if new_weather_enum == DataWeatherParametersType.ClearNoon:
+                new_weather = WeatherParameters.ClearNoon
+            elif new_weather_enum == DataWeatherParametersType.CloudyNoon:
+                new_weather = WeatherParameters.CloudyNoon
+            elif new_weather_enum == DataWeatherParametersType.ClearSunset:
+                new_weather = WeatherParameters.ClearSunset
+            elif new_weather_enum == DataWeatherParametersType.WetNoon:
+                new_weather = WeatherParameters.WetNoon
+            elif new_weather_enum == DataWeatherParametersType.WetCloudyNoon:
+                new_weather = WeatherParameters.WetCloudyNoon
+            elif new_weather_enum == DataWeatherParametersType.SoftRainNoon:
+                new_weather = WeatherParameters.SoftRainNoon
+            elif new_weather_enum == DataWeatherParametersType.MidRainyNoon:
+                new_weather = WeatherParameters.MidRainyNoon
+            elif new_weather_enum == DataWeatherParametersType.HardRainNoon:
+                new_weather = WeatherParameters.HardRainNoon
+            elif new_weather_enum == DataWeatherParametersType.CloudySunset:
+                new_weather = WeatherParameters.CloudySunset
+            elif new_weather_enum == DataWeatherParametersType.WetSunset:
+                new_weather = WeatherParameters.WetSunset
+            elif new_weather_enum == DataWeatherParametersType.WetCloudySunset:
+                new_weather = WeatherParameters.WetCloudySunset
+            elif new_weather_enum == DataWeatherParametersType.SoftRainSunset:
+                new_weather = WeatherParameters.SoftRainSunset
+            elif new_weather_enum == DataWeatherParametersType.MidRainSunset:
+                new_weather = WeatherParameters.MidRainSunset
+            elif new_weather_enum == DataWeatherParametersType.HardRainSunset:
+                new_weather = WeatherParameters.HardRainSunset
+        print("Changing the weather to", new_weather)
         # Set the weather to the world
         world.set_weather(new_weather)
         return DataWeatherParameters.from_weather(new_weather, new_weather_enum)
@@ -329,13 +381,13 @@ if __name__ == '__main__':
     argparser.add_argument(
         '-n', '--number-of-vehicles',
         metavar='N',
-        default=200,
+        default=20,
         type=int,
         help='Number of vehicles (default: 30)')
     argparser.add_argument(
         '-w', '--number-of-walkers',
         metavar='W',
-        default=30,
+        default=5,
         type=int,
         help='Number of walkers (default: 10)')
     argparser.add_argument(
@@ -376,7 +428,7 @@ if __name__ == '__main__':
         '-s', '--seed',
         metavar='S',
         type=int,
-        default=0,
+        default=10,
         help='Set random device seed and deterministic mode for Traffic Manager')
     argparser.add_argument(
         '--car-lights-on',
@@ -401,9 +453,25 @@ if __name__ == '__main__':
     argparser.add_argument(
         '-l', '--length-of-run',
         metavar='L',
-        default=5,
+        default=20,
         type=float,
         help='Length of the run in minutes (default: 5')
+    argparser.add_argument(  # ADDED
+        '--weather',
+        action='store',
+        metavar='[0-14]',
+        type=int,
+        default=1,  # default = -1
+        help='If argument between 0-14, weather preset gets set to it. Otherwise it gets ignored'
+    )
+    argparser.add_argument(  # ADDED
+        '--map',
+        action='store',
+        metavar='[0,1,2,3,4,5,10]',
+        type=int,
+        default= 1,  # default = 0
+        help='Argument x selects TownX as map. If x=0, or any other variable out of range, map decision is random'
+    )
 
     args = argparser.parse_args()
     print("Seed:", args.seed)
@@ -418,8 +486,13 @@ if __name__ == '__main__':
     data_generator = CarlaDataGenerator(client)
     print("Generate traffic")
     # Change weather to one of the predefined ones
+
+    map_name = ''
+
+
+    map_name = data_generator.change_map(client=client, selectedMap=args.map)  # ADDED, switched map_name and data_weather statements
     data_weather = data_generator.change_weather(world=world)
-    map_name = data_generator.change_map(client=client)
+
     time.sleep(5)
 
     file_name = map_name + "_seed" + str(args.seed)

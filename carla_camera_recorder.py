@@ -5,12 +5,21 @@ import carla
 import os
 import cv2
 
-from carla import Vehicle
-from carla import World, Client
+from carla import Vehicle, ActorBlueprint
+from carla import World, Client, WeatherParameters, ColorConverter
+from data_classes import DataWeatherParameters
 
+import json_helper
 from carla_api_helper import CarlaAPIHelper
 from carla_recording_generator import CarlaDataGenerator
 from json_helper import JSONHelper
+import time
+
+import math  # ADDED
+import ImageLabelGenerator2
+import ImageLabelGenerator3
+
+import csv
 
 
 class CarlaCameraRecorder:
@@ -20,6 +29,7 @@ class CarlaCameraRecorder:
         self.client = carla_client
         self.world: World = carla_client.get_world()
         self.map = self.world.get_map()
+        # self.world.set_weather(carla.WeatherParameters.ClearSunset)  # ADDED
 
     def record_camera_in_simulation_run(self, seed: int, vehicle_id: int, width: int, height: int, begin_at: float,
                                         end_at: float) -> None:
@@ -59,9 +69,21 @@ class CarlaCameraRecorder:
 
         # Get map name of recording
         map_name = info.split("Map: ")[1].split("\nDate")[0]
+        print(map_name)
 
+        new_weather = carla.WeatherParameters.Default
         # Load map from recording
         self.client.load_world(map_name)
+
+        #Load Weather from recording log
+        weather_path = JSONHelper.get_weather_from_seed(seed=seed, recording=True)
+        print("Wetter-Pfad: ", weather_path)
+        JSONHelper.extract_from_zip(weather_path)
+        self.world.set_weather(self.from_dict_to_wp(json_helper.load_weather(str(weather_path).replace(".zip", ".json"))))
+        print(self.from_dict_to_wp(json_helper.load_weather(str(weather_path).replace(".zip", ".json"))))
+        #print(carla.WeatherParameters.ClearNight)
+        #self.world.set_weather(carla.WeatherParameters.ClearNight)
+
 
         # Get world for later use
         world: World = self.client.get_world()
@@ -71,6 +93,34 @@ class CarlaCameraRecorder:
         new_settings.synchronous_mode = True
         new_settings.fixed_delta_seconds = CarlaDataGenerator.SIMULATOR_FIXED_TICK_DELTA
         world.apply_settings(new_settings)
+
+        # add degree for rotating TrafficLights
+        blueprint_library = world.get_blueprint_library()
+        trafficlight_rotation = ""
+        trafficlight_location = ""
+        car = False
+        if car:
+            blueprint_library = blueprint_library.filter('vehicle.nissan.micra')
+            print(blueprint_library)
+
+            trafficlight_rotation = carla.Rotation(yaw=args.yaw)
+            trafficlight_location = carla.Location(77.6919788, 4.83, 0.10324219)
+            #trafficlight_location = carla.Location(102.11, 4.83, 0.10324219)
+            trafficlight_transform = carla.Transform(trafficlight_location, trafficlight_rotation)
+
+
+            #wurde zum drehen der Ampel verwendet
+
+            #print(nissan_cars)
+            #location = carla.Location(77.6919788, 4.83, 0.10324219)
+            ##location = carla.Location(100.53, 4.83, 0.25)
+            #location = carla.Location(77.48, 4, 1)
+            #for car in nissan_cars:
+                #print(carla.Actor.get_transform(bp))
+            #for bp in trafficlight_bp:
+                #print(bp.attribute)
+
+
 
         # Initialize necessary helper classes
         api_helper = CarlaAPIHelper(client, world)
@@ -88,25 +138,69 @@ class CarlaCameraRecorder:
             vehicles = api_helper.get_vehicles()
             world.tick()
 
+        print(*(map(lambda c: c.id, vehicles)))  # ADDED
+
         # Get the ego vehicle from the given vehicle id
         ego_vehicle: Vehicle = list(filter(lambda v: v.id == vehicle_id, vehicles))[0]
 
         # --------------
-        # Spawn attached RGB camera
+        # Spawn attached instance_segmentation camera
         # --------------
         cam_bp = None
-        cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
+        if args.rgb:  # ADDED
+            cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
+        else:
+            cam_bp = world.get_blueprint_library().find('sensor.camera.instance_segmentation')
+
         cam_bp.set_attribute("image_size_x", str(width))
         cam_bp.set_attribute("image_size_y", str(height))
         cam_bp.set_attribute("fov", str(105))
-        cam_location = carla.Location(-2, 0, 3)
-        cam_rotation = carla.Rotation(0, 0, 0)
+
+
+        # cam_bp.set_attribute("image_type", "Grayscale")
+
+        cam_location = carla.Location(2, 0, 2) #(-2,0,3)
+        cam_rotation = carla.Rotation(10, 0, 0)
         cam_transform = carla.Transform(cam_location, cam_rotation)
         ego_cam = world.spawn_actor(cam_bp, cam_transform, attach_to=ego_vehicle,
                                     attachment_type=carla.AttachmentType.Rigid)
-        ego_cam.listen(lambda image: CarlaCameraRecorder.save_image_data(image, seed, vehicle_id, begin_at=begin_at,
+        if args.rgb:
+            ego_cam.listen(lambda image: CarlaCameraRecorder.save_image_data_semantic(world,image, seed, vehicle_id,
+                                                                                      begin_at=begin_at, end_at=end_at))
+        else:
+            ego_cam.listen(lambda image: CarlaCameraRecorder.save_image_data_instance(world, image, seed, vehicle_id, begin_at=begin_at,
                                                                          end_at=end_at))
         spectator = world.get_spectator()
+
+        # --------------
+        # initialize obstacle detector (if activated)
+        # --------------
+        obs_bp = world.get_blueprint_library().find('sensor.other.obstacle')
+
+        obs_bp.set_attribute("distance", str(50))
+        obs_bp.set_attribute("hit_radius", str(50))
+        obs_bp.set_attribute("only_dynamics", str(False))
+
+        obs_location = carla.Location(0, 0, 0)
+        obs_rotation = carla.Rotation(0, 0, 0)
+        obs_transform = carla.Transform(obs_location, obs_rotation)
+
+        obs_detector = 0
+
+
+        def obstacle_detection_callback(event):
+            print(f"Obstacle Detector: {event}")
+
+
+        if args.obstacledetector:
+            obs_detector = world.spawn_actor(obs_bp, obs_transform, attach_to=ego_cam)
+            obs_detector.listen(lambda data: obstacle_detection_callback(data))
+
+
+
+        # spawns rotated fake trafficlight
+        if car:
+            actor = world.spawn_actor(blueprint_library[0], carla.Transform(trafficlight_location, trafficlight_rotation))
 
         # Tick the world for each frame in the replay
         for tick in range(1, replay_tick_count):
@@ -122,6 +216,7 @@ class CarlaCameraRecorder:
             transform = ego_cam.get_transform()
             spectator.set_transform(carla.Transform(transform.location, transform.rotation))
             print(f"Tick {tick} of {replay_tick_count}. Simulation Tick: {current_tick}")
+            #print(world.get_actors())
             while CarlaCameraRecorder.COUNTER < tick:
                 x = ""
 
@@ -134,7 +229,10 @@ class CarlaCameraRecorder:
 
     @staticmethod
     def get_video_prefix(seed: int, vehicle_id: int, begin_at: float, end_at: float) -> os.path:
-        return f"seed_{seed}-vehicle_{vehicle_id}_range[{begin_at}, {end_at}]"
+        if args.rgb:
+            return f"seed_{seed}-vehicle_{vehicle_id}_range[{float(begin_at)}, {end_at}]" #ADDED
+        else:
+            return f"INSTANCE_seed_{seed}-vehicle_{vehicle_id}_range[{float(begin_at)}, {end_at}]"  # ADDED
 
     @staticmethod
     def get_image_save_folder(seed: int, vehicle_id: int, begin_at: float, end_at: float) -> os.path:
@@ -148,26 +246,100 @@ class CarlaCameraRecorder:
         return os.path.join(recording_folder, JSONHelper.VIDEO_FOLDER)
 
     @staticmethod
-    def save_image_data(image, seed: int, vehicle_id: int, begin_at: float, end_at: float):
+    def save_image_data_instance(world, image, seed: int, vehicle_id: int, begin_at: float, end_at: float):
         CarlaCameraRecorder.COUNTER += 1
         current_tick = CarlaDataGenerator.SIMULATOR_FIXED_TICK_DELTA * CarlaCameraRecorder.COUNTER
-        if begin_at <= current_tick <= end_at:
-            image_name = "%.6d.jpg" % CarlaCameraRecorder.COUNTER
+        if begin_at <= current_tick <= end_at and CarlaCameraRecorder.COUNTER % 10 == 0 and (CarlaCameraRecorder.COUNTER / 5) > args.start_at:
+            image_name = f"%.6d_INSTANCE_seed{args.seed}.png" % (CarlaCameraRecorder.COUNTER / 5)
+            label_name = f"%.6d_seed{args.seed}.png" % (CarlaCameraRecorder.COUNTER / 5)
+
+            #image_name = f"%.6d_INSTANCE.png" % CarlaCameraRecorder.COUNTER
             image_save_folder = CarlaCameraRecorder.get_image_save_folder(seed, vehicle_id, begin_at=begin_at,
                                                                           end_at=end_at)
             recording_path = os.path.join(image_save_folder, image_name)
             print(f"Save image {image_name}")
             image.save_to_disk(recording_path)
 
+            actorlist = world.get_actors()
+
+            tl_list = actorlist.filter('traffic.traffic_light')
+            print(tl_list)
+
+
+            sensor_actor = actorlist.filter('sensor.camera.instance_segmentation')[0]
+
+            label = ImageLabelGenerator3.checkImage(tl_list, sensor_actor, recording_path)
+
+            os.remove(recording_path)
+
+
+            with open(image_save_folder+f"/labels_{args.seed}.csv",'a', encoding='utf-8') as csv_file:
+                writer = csv.writer(csv_file, delimiter=',')
+                writer.writerow([label_name, label])
+
+
+
+
+
     @staticmethod
-    def save_video(seed: int, vehicle_id: int, begin_at: float, end_at: float):
+    def save_image_data_semantic(world: World, image, seed: int, vehicle_id: int, begin_at: float, end_at: float):  # ADDED
+        CarlaCameraRecorder.COUNTER += 1
+        current_tick = CarlaDataGenerator.SIMULATOR_FIXED_TICK_DELTA * CarlaCameraRecorder.COUNTER
+        if begin_at <= current_tick <= end_at:
+
+            actorlist = world.get_actors()
+            tl_list = actorlist.filter('traffic.traffic_light')
+            tl_id_list = [actor.id for actor in tl_list]
+
+            # print(tl_id_list)
+
+            camera_location = actorlist.filter('sensor.camera.rgb')[0].get_location()
+
+            # calculate angle between car and trafficlight (old?)
+            car = False
+            if car:
+                #wurde zur temporären Winkelbestimmung zwischen Ampel und Kamera verwendet
+                trafficlight_location = carla.Location(77.6919788, 4.83, 0.10324219) #1st normal trafficlight
+                #trafficlight_location = carla.Location(102.43, 4.83, 0.10324219)  # 1st normal trafficlight
+                #trafficlight_location = carla.Location(85.73, 45.5680212, 0.10324219) #2st normal trafficlight
+
+                #trafficlight_location = carla.Location(13.70279815, -213.7444715, 0.10324219) #AmericanLights_0
+                #trafficlight_location = carla.Location(10.70224365, -213.74447173, 0.10324219)  # AmericanLights_1
+                #trafficlight_location = carla.Location(7.20242797, -213.74447181, 0.10324219)  # AmericanLights_2
+
+                distance_x = abs(trafficlight_location.x - camera_location.x)
+                distance_y = abs(trafficlight_location.y - camera_location.y)
+
+                degree = math.atan(distance_y/distance_x) * (180 / math.pi) #Rad to degree
+                #degree = math.atan(distance_x / distance_y) * (180 / math.pi)  # Rad to degree
+                degree = round(degree,2)
+
+            #image_name = f"%.6d_SEMANTIC_degree_{degree}yaw{args.yaw - 90}.png" % CarlaCameraRecorder.COUNTER
+
+            test_distance_tl = carla.Location(323.410097, 202.030078, 0.10326172)
+
+            distance = test_distance_tl.distance(camera_location)
+            degree = "X"
+
+            image_name = f"%.6d_degree_X_yaw_{args.yaw}.png" % CarlaCameraRecorder.COUNTER
+            image_save_folder = CarlaCameraRecorder.get_image_save_folder(seed, vehicle_id, begin_at=begin_at,
+                                                                          end_at=end_at)
+            recording_path = os.path.join(image_save_folder, image_name)
+            print(f"Save image {image_name}")
+            #image.save_to_disk(recording_path, carla.ColorConverter.CityScapesPalette)
+            image.save_to_disk(recording_path)
+
+    @staticmethod
+    def save_video(seed: int, vehicle_id: int, begin_at: float, end_at: float, semantic = False):
         image_folder = CarlaCameraRecorder.get_image_save_folder(seed, vehicle_id, begin_at=begin_at, end_at=end_at)
 
         video_folder = CarlaCameraRecorder.get_video_save_folder()
         if not os.path.exists(video_folder):
             os.makedirs(video_folder)
-
-        video_name = f"{CarlaCameraRecorder.get_video_prefix(seed, vehicle_id, begin_at, end_at)}.mp4"
+        if semantic:
+            video_name = f"{CarlaCameraRecorder.get_video_prefix(seed, vehicle_id, begin_at, end_at)}.mp4"
+        else:
+            video_name = f"INSTANCE_{CarlaCameraRecorder.get_video_prefix(seed, vehicle_id, begin_at, end_at)}.mp4"
         video_path = os.path.join(video_folder, video_name)
 
         if os.path.exists(video_path):
@@ -179,7 +351,7 @@ class CarlaCameraRecorder:
             print("There are no images to save as video")
             return
 
-        images = [img for img in images_in_folder if img.endswith(".jpg")]
+        images = [img for img in images_in_folder if img.endswith(".png")]
 
         images = images[0:-1]
 
@@ -197,19 +369,45 @@ class CarlaCameraRecorder:
         video.release()
 
 
+    @staticmethod
+    def from_dict_to_wp(dwp: DataWeatherParameters) -> WeatherParameters:  # ADDED
+        type = dwp.type
+        cloudiness = dwp.cloudiness
+        precipitation = dwp.precipitation
+        precipitation_deposits = dwp.precipitation_deposits
+        wind_intensity = dwp.wind_intensity
+        sun_azimuth_angle = dwp.sun_azimuth_angle
+        sun_altitude_angle = dwp.sun_altitude_angle
+        fog_density = dwp.fog_density
+        fog_distance = dwp.fog_distance
+        wetness = dwp.wetness
+        fog_falloff = dwp.fog_falloff
+        scattering_intensity = dwp.scattering_intensity
+        mie_scattering_scale = dwp.mie_scattering_scale
+        rayleigh_scattering_scale = dwp.rayleigh_scattering_scale
+
+        weatherparam= WeatherParameters(cloudiness, precipitation, precipitation_deposits, wind_intensity,
+                                 sun_azimuth_angle,sun_altitude_angle,
+                                 fog_density, fog_distance, wetness, fog_falloff, scattering_intensity,
+                                 mie_scattering_scale,rayleigh_scattering_scale)
+
+
+        return weatherparam
+
+
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser(description=__doc__)
     argparser.add_argument(
         '-s', '--seed',
         metavar='S',
         type=str,
-        default=0,
+        default=50,
         help='Set seed for which the recording should be loaded')
     argparser.add_argument(
         '-v', '--vehicle-id',
         metavar='V',
         type=int,
-        default=135,
+        default=500, #111, #seed2: 290, seed1: 135 vorher 290
         help='For which vehicle id should the camera be recorded?')
     argparser.add_argument(
         '-x', '--width',
@@ -227,14 +425,43 @@ if __name__ == '__main__':
         '-b', '--begin_at',
         metavar='B',
         type=float,
-        default=0.0,
+        default=0, #164.15,#59.3, #49.3, #0.0,
         help='Tick at which the video should start')
     argparser.add_argument(
         '-e', '--end_at',
         metavar='E',
         type=float,
-        default=sys.maxsize,
+        default=sys.maxsize, #207.2,#86.5,#61.1, #sys.maxsize,
         help='Tick at which the video should end')
+    argparser.add_argument(  # ADDED
+        '--rgb',
+        metavar='RGB',
+        default=False,
+        type=bool,
+        action='store',
+        help='True turns on RGB Frame Sampling')
+    argparser.add_argument(  # ADDED
+        '--yaw', '-r',
+        metavar='YAW',
+        default=90,
+        type=int,
+        action='store',
+        help='Amount of degrees the test-TrafficLight should rotate (y-axis)')
+    argparser.add_argument(  # ADDED
+        '--obstacledetector',
+        metavar='obstacledetector',
+        default=False,
+        type=bool,
+        action='store',
+        help='Turns off/on the obstacledetector and returns obstacles around car')
+    argparser.add_argument(  # ADDED
+        '--start_at',
+        metavar='start',
+        default=2260,
+        type=int,
+        action='store',
+        help='defines at which frame the sampling should start')
+
     args = argparser.parse_args()
 
     seed = args.seed
@@ -250,7 +477,7 @@ if __name__ == '__main__':
     print(f"Video Width: {video_width}, Video Height: {video_height}")
 
     print("Connect to Carla")
-
+    print(args.yaw)
     # Find carla simulator at localhost on port 2000
     client = carla.Client('localhost', 2000)
 
@@ -266,4 +493,4 @@ if __name__ == '__main__':
     finally:
         print("Convert images to video")
         CarlaCameraRecorder.save_video(seed=seed, vehicle_id=vehicle_id, begin_at=begin_at,
-                                       end_at=CarlaCameraRecorder.END_AT)
+                                       end_at=CarlaCameraRecorder.END_AT, semantic=False)

@@ -6,7 +6,7 @@ from typing import List
 import zipfile
 from pathlib import Path
 
-from data_classes import TickData, DataBlock, DataWeatherParameters
+from data_classes import TickData, DataBlock, DataWeatherParameters, WeatherParameters
 
 
 class JSONHelper:
@@ -43,6 +43,24 @@ class JSONHelper:
                     file_path = path
                     break
         return file_path
+
+    @staticmethod
+    def get_weather_from_seed(seed: int, recording: bool) -> os.path:  # ADDED
+        recording_dir = JSONHelper.get_experiment_data_folder()
+        if recording:
+            recording_dir = os.path.join(recording_dir, JSONHelper.RECORDINGS_RUNS_FOLDER)
+        else:
+            recording_dir = os.path.join(recording_dir, JSONHelper.SIMULATION_RUNS_FOLDER)
+        path_list = list(Path(recording_dir).glob('**/*.zip'))
+        weather_path = ""
+        for path in path_list:
+            # because path is object not string
+            if JSONHelper.WEATHER_FILE_NAME_PREFIX in str(path):
+                file_seed = str(path).split("_seed")[1].split(".")[0]
+                if file_seed == str(seed):
+                    weather_path = path
+                    break
+        return weather_path
 
     @staticmethod
     def get_file_path_folder(folder: str = "") -> os.path:
@@ -200,3 +218,6 @@ def load_weather(path: os.path) -> DataWeatherParameters:
     with open(path, encoding="utf8") as logfile:
         data = json.loads(logfile.read())
         return DataWeatherParameters.from_dict(data)
+
+
+

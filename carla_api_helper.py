@@ -109,9 +109,25 @@ class CarlaAPIHelper:
     ########################################
 
     @staticmethod
-    def get_usable_maps(client: Client) -> List[str]:
-        available_maps = client.get_available_maps()
+    def get_usable_maps(client: Client, selectedMap=0) -> List[str]:
+        available_maps = []
+        if selectedMap in [1, 2, 3, 4, 5, 10]:  # ADDED
+            if selectedMap == 1:
+                return ['/Game/Carla/Maps/Town01_Opt']
+            if selectedMap == 2:
+                return ['/Game/Carla/Maps/Town02_Opt']
+            if selectedMap == 3:
+                return ['/Game/Carla/Maps/Town03_Opt']
+            if selectedMap == 4:
+                return ['/Game/Carla/Maps/Town04_Opt']
+            if selectedMap == 5:
+                return ['/Game/Carla/Maps/Town05_Opt']
+            if selectedMap == 10:
+                return ['/Game/Carla/Maps/Town10HD_Opt']
+        else:
+            available_maps = client.get_available_maps()
         usable_maps = []
+        print(available_maps)
         for map in available_maps:
             if "_Opt" in map:
                 continue
@@ -119,6 +135,7 @@ class CarlaAPIHelper:
                 if usable_map in map:
                     usable_maps.append(map)
         return usable_maps
+        #return ['/Game/Carla/Maps/Town04_Opt']
 
     @staticmethod
     def get_data_actor_from_actor(actor: Actor, ego_vehicle: bool = False) -> Optional[DataActor]:
